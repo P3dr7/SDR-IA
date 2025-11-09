@@ -1,0 +1,31 @@
+{
+  "name": "sdr-agent-backend",
+  "version": "1.0.0",
+  "description": "Backend orquestrador para agente SDR automatizado com Gemini",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "discover:pipefy": "node script/discover-pipefy-fields.js"
+  },
+  "keywords": [
+    "sdr",
+    "gemini",
+    "fastify",
+    "ai",
+    "chatbot"
+  ],
+  "author": "Pedro H Ferri",
+  "license": "ISC",
+  "dependencies": {
+    "@fastify/cors": "^10.0.1",
+    "@google/generative-ai": "^0.21.0",
+    "fastify": "^5.1.0",
+    "uuid": "^11.0.3"
+  },
+  "devDependencies": {
+    "dotenv": "^16.4.5"
+  }
+}
