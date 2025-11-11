@@ -4,12 +4,22 @@ import cors from "@fastify/cors";
 import chatRoutes from "./src/routes/chat.js";
 // import dotenv from 'dotenv';
 import { testEventCreation } from "./src/services/google-calendar.service.js";
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
 
-// dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const envPath = path.resolve(__dirname, ".env");
+dotenv.config({ path: envPath });
 
 const fastify = Fastify({
 	logger: true,
 });
+
+console.log("🚀 Iniciando servidor...");
+console.log("CORS_ORIGIN:", process.env.CORS_ORIGIN);
 
 // Configurar CORS
 await fastify.register(cors, {

@@ -234,7 +234,7 @@ export async function createCalendarEvent(details) {
 }
 
 // ============================================
-// FUNÇÃO DE TESTE (adicione temporariamente)
+// FUNÇÃO DE TESTE 
 // ============================================
 
 /**

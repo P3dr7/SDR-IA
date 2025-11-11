@@ -8,6 +8,8 @@ console.log("[API] Base URL:", API_BASE_URL == null ? "null" : API_BASE_URL);
  */
 export async function sendMessage(message, conversationId = null) {
 	try {
+        console.log("[API] Sending message to:", `${API_BASE_URL}/api/chat`);
+        console.log("[API] Payload:", { message, conversation_id: conversationId });
 		const response = await fetch(`${API_BASE_URL}/api/chat`, {
 			method: "POST",
 			headers: {

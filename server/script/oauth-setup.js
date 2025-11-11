@@ -1,6 +1,3 @@
-// oauth-setup.js
-// Execute: node oauth-setup.js
-
 import { google } from 'googleapis';
 import http from 'http';
 import { URL } from 'url';

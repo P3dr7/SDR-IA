@@ -1,17 +1,15 @@
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
-
-// --- Bloco para resolver o caminho corretamente em ES Modules ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 // -------------------------------------------------------------
 
-// IMPORTANTE: Carregar variáveis ANTES de usá-las
+//Carregar variáveis ANTES de usá-las
 const envPath = path.resolve(__dirname, "../../.env");
 dotenv.config({ path: envPath });
 
-// Agora sim, acessar as variáveis
+
 const PIPEFY_API_URL = "https://api.pipefy.com/graphql";
 const PIPEFY_API_TOKEN = process.env.PIPEFY_API_TOKEN;
 const PIPE_ID = process.env.PIPEFY_PIPE_ID;
@@ -423,12 +421,11 @@ export async function createOrUpdateCard(data) {
 
 			// Atualizar cada campo separadamente
 			for (const field of fieldsToUpdate) {
-				// ====== MUDANÇA 2: Mostrar também o tipo ======
+				
 				console.log(
 					`[Pipefy Service] Atualizando campo ${field.field_id} (tipo: ${field.field_type})...`
 				);
 				try {
-					// ====== MUDANÇA 3: Usar formatFieldValue ao invés de String() ======
 					const formattedValue = formatFieldValue(
 						field.field_value,
 						field.field_type
@@ -471,7 +468,6 @@ export async function createOrUpdateCard(data) {
 				},
 			};
 		} else {
-			// 2b. CRIAR novo card
 			console.log("[Pipefy Service] ➕ Criando novo card...");
 
 			// Se estiver em modo mock
@@ -525,7 +521,7 @@ export async function createOrUpdateCard(data) {
 
 			const result = await pipefyGraphQLRequest(createMutation, {
 				pipeId: PIPE_ID,
-				fields: fieldsForAPI, // ✅ Envia apenas field_id e field_value
+				fields: fieldsForAPI, //  Envia apenas field_id e field_value
 			});
 
 			console.log("[Pipefy Service] ✅ Card criado com sucesso");
@@ -669,7 +665,6 @@ export async function updateCardWithMeeting(
 					`[Pipefy Service] ✗ Erro ao atualizar campo ${field.field_id}:`,
 					error.message
 				);
-				// Continua atualizando os outros campos
 			}
 		}
 
