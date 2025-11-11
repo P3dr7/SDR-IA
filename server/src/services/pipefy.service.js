@@ -17,8 +17,6 @@ const PIPEFY_API_TOKEN = process.env.PIPEFY_API_TOKEN;
 const PIPE_ID = process.env.PIPEFY_PIPE_ID;
 
 console.log("[Pipefy Service] Inicializando serviço Pipefy...");
-// console.log(`[Pipefy Service] PIPE_ID: ${PIPE_ID ? PIPE_ID : 'NÃO CONFIGURADO'}`);
-// console.log(`[Pipefy Service] API_TOKEN: ${PIPEFY_API_TOKEN ? 'CONFIGURADO' : 'NÃO CONFIGURADO'}`);
 let pipeFieldsCache = null;
 
 /**
@@ -42,13 +40,18 @@ async function pipefyGraphQLRequest(query, variables = {}) {
 		});
 
 		if (!response.ok) {
+			const errorText = await response.text();
+			console.error(`[Pipefy API] HTTP Error ${response.status}:`, errorText);
 			throw new Error(`HTTP error! status: ${response.status}`);
 		}
 
 		const result = await response.json();
 
 		if (result.errors) {
-			console.error("[Pipefy API] Errors:", result.errors);
+			console.error(
+				"[Pipefy API] GraphQL Errors:",
+				JSON.stringify(result.errors, null, 2)
+			);
 			throw new Error(result.errors[0]?.message || "GraphQL error");
 		}
 
@@ -91,58 +94,64 @@ async function loadPipeFields() {
 		const data = await pipefyGraphQLRequest(query, { pipeId: PIPE_ID });
 		const fields = data.pipe.start_form_fields;
 
-		// Mapear campos por label normalizado
 		const fieldMapping = {};
 
 		fields.forEach((field) => {
 			const normalizedLabel = field.label
 				.toLowerCase()
 				.normalize("NFD")
-				.replace(/[\u0300-\u036f]/g, "") // Remove acentos
+				.replace(/[\u0300-\u036f]/g, "")
 				.replace(/\s+/g, "_")
 				.replace(/[^a-z0-9_]/g, "");
 
-			fieldMapping[normalizedLabel] = field.id;
+			// MUDANÇA: Guardar id E type
+			fieldMapping[normalizedLabel] = {
+				id: field.id,
+				type: field.type,
+			};
 
-			// Criar variações comuns do nome
+			// Criar variações comuns
 			if (normalizedLabel.includes("nome")) {
-				fieldMapping["nome"] = field.id;
+				fieldMapping["nome"] = { id: field.id, type: field.type };
 			}
 			if (
 				normalizedLabel.includes("email") ||
 				normalizedLabel.includes("e_mail")
 			) {
-				fieldMapping["email"] = field.id;
+				fieldMapping["email"] = { id: field.id, type: field.type };
 			}
 			if (
 				normalizedLabel.includes("empresa") ||
 				normalizedLabel.includes("company")
 			) {
-				fieldMapping["empresa"] = field.id;
+				fieldMapping["empresa"] = { id: field.id, type: field.type };
 			}
 			if (
 				normalizedLabel.includes("necessidade") ||
 				normalizedLabel.includes("need")
 			) {
-				fieldMapping["necessidade"] = field.id;
+				fieldMapping["necessidade"] = { id: field.id, type: field.type };
 			}
 			if (
 				normalizedLabel.includes("interesse") ||
 				normalizedLabel.includes("interest")
 			) {
-				fieldMapping["interesse_confirmado"] = field.id;
+				fieldMapping["interesse_confirmado"] = {
+					id: field.id,
+					type: field.type,
+				};
 			}
 			if (
 				normalizedLabel.includes("link") &&
 				normalizedLabel.includes("reuniao")
 			) {
-				fieldMapping["link_reuniao"] = field.id;
+				fieldMapping["link_reuniao"] = { id: field.id, type: field.type };
 			}
 			if (
 				normalizedLabel.includes("data") &&
 				normalizedLabel.includes("reuniao")
 			) {
-				fieldMapping["data_reuniao"] = field.id;
+				fieldMapping["data_reuniao"] = { id: field.id, type: field.type };
 			}
 		});
 
@@ -157,6 +166,7 @@ async function loadPipeFields() {
 
 /**
  * Busca um card por e-mail (para verificar duplicatas)
+ * CORRIGIDO: Usa paginação adequada e busca em todas as páginas
  * @param {string} email - E-mail para buscar
  * @returns {Promise<Object|null>} Card encontrado ou null
  */
@@ -176,9 +186,12 @@ export async function findCardByEmail(email) {
 		return null;
 	}
 
+	const emailFieldId = fieldMapping.email.id;
+
+	// Query com paginação melhorada
 	const query = `
-    query SearchCards($pipeId: ID!) {
-      cards(pipe_id: $pipeId, first: 50) {
+    query SearchCards($pipeId: ID!, $after: String) {
+      cards(pipe_id: $pipeId, first: 50, after: $after) {
         edges {
           node {
             id
@@ -191,42 +204,74 @@ export async function findCardByEmail(email) {
               }
             }
           }
+          cursor
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
         }
       }
     }
   `;
 
 	try {
-		const data = await pipefyGraphQLRequest(query, { pipeId: PIPE_ID });
-		const cards = data.cards?.edges || [];
+		let hasNextPage = true;
+		let after = null;
 
-		// Buscar card com o email específico
-		const emailFieldId = fieldMapping.email;
+		// Buscar em todas as páginas até encontrar o email
+		while (hasNextPage) {
+			const data = await pipefyGraphQLRequest(query, {
+				pipeId: PIPE_ID,
+				after,
+			});
 
-		for (const edge of cards) {
-			const card = edge.node;
-			const emailField = card.fields.find((f) => f.field.id === emailFieldId);
+			const cards = data.cards?.edges || [];
+			const pageInfo = data.cards?.pageInfo || {};
 
-			if (
-				emailField &&
-				emailField.value?.toLowerCase() === email.toLowerCase()
-			) {
-				console.log("[Pipefy Service] Card encontrado:", card.id);
-				return {
-					id: card.id,
-					title: card.title,
-					fields: card.fields,
-					found: true,
-				};
+			// Buscar card com o email específico nesta página
+			for (const edge of cards) {
+				const card = edge.node;
+				const emailField = card.fields.find((f) => f.field.id === emailFieldId);
+
+				if (
+					emailField &&
+					emailField.value?.toLowerCase().trim() === email.toLowerCase().trim()
+				) {
+					console.log("[Pipefy Service] ✅ Card encontrado:", card.id);
+					return {
+						id: card.id,
+						title: card.title,
+						fields: card.fields,
+						found: true,
+					};
+				}
+			}
+
+			// Verificar se há mais páginas
+			hasNextPage = pageInfo.hasNextPage;
+			after = pageInfo.endCursor;
+
+			if (hasNextPage) {
+				console.log("[Pipefy Service] Buscando próxima página...");
 			}
 		}
 
-		console.log("[Pipefy Service] Nenhum card encontrado com este email");
+		console.log("[Pipefy Service] ❌ Nenhum card encontrado com este email");
 		return null;
 	} catch (error) {
-		console.error("[Pipefy Service] Erro ao buscar card:", error);
-		return null;
+		console.error("[Pipefy Service] ❌ Erro ao buscar card:", error);
+		throw error; // Propagar o erro para melhor tratamento
 	}
+}
+
+function formatFieldValue(value, fieldType) {
+	// Se já for array, retorna como está
+	if (Array.isArray(value)) {
+		return value;
+	}
+
+	// SEMPRE retorna como array (a API espera isso)
+	return [String(value)];
 }
 
 /**
@@ -243,43 +288,57 @@ function prepareFields(data, fieldMapping, isUpdate = false) {
 	// Nome
 	if (fieldMapping.nome && nome) {
 		fields.push({
-			field_id: fieldMapping.nome,
+			field_id: fieldMapping.nome.id,
 			field_value: nome,
+			_field_type: fieldMapping.nome.type, // <-- mudou aqui
 		});
 	}
 
 	// Email
 	if (fieldMapping.email && email) {
 		fields.push({
-			field_id: fieldMapping.email,
+			field_id: fieldMapping.email.id,
 			field_value: email,
+			_field_type: fieldMapping.email.type, // <-- mudou aqui
 		});
 	}
 
 	// Empresa (opcional)
 	if (fieldMapping.empresa && empresa) {
 		fields.push({
-			field_id: fieldMapping.empresa,
+			field_id: fieldMapping.empresa.id,
 			field_value: empresa,
+			_field_type: fieldMapping.empresa.type, // <-- mudou aqui
 		});
 	}
 
 	// Necessidade
 	if (fieldMapping.necessidade && necessidade) {
 		fields.push({
-			field_id: fieldMapping.necessidade,
+			field_id: fieldMapping.necessidade.id,
 			field_value: necessidade,
+			_field_type: fieldMapping.necessidade.type, // <-- mudou aqui
 		});
 	}
 
 	// Interesse Confirmado
-	if (fieldMapping.interesse_confirmado && interesse_confirmado !== undefined) {
+	if (
+		fieldMapping.interesse_confirmado !== undefined &&
+		interesse_confirmado !== undefined
+	) {
+		const valorInteresse = interesse_confirmado ? "Sim" : "Nao";
 		fields.push({
-			field_id: fieldMapping.interesse_confirmado,
-			field_value: interesse_confirmado ? "Sim" : "Não",
+			field_id: fieldMapping.interesse_confirmado.id,
+			field_value: valorInteresse,
+			_field_type: fieldMapping.interesse_confirmado.type, // <-- mudou aqui
 		});
 	}
 
+	console.log(
+		`[Pipefy Service] ${isUpdate ? "Atualizando" : "Criando"} com ${
+			fields.length
+		} campos`
+	);
 	return fields;
 }
 
@@ -291,7 +350,11 @@ function prepareFields(data, fieldMapping, isUpdate = false) {
 export async function createOrUpdateCard(data) {
 	const { nome, email, empresa, necessidade, interesse_confirmado } = data;
 
-	console.log("[Pipefy Service] Processando lead:", { nome, email, empresa });
+	console.log("[Pipefy Service] 📝 Processando lead:", {
+		nome,
+		email,
+		empresa,
+	});
 
 	try {
 		// 1. Verificar se já existe um card com este e-mail
@@ -299,7 +362,7 @@ export async function createOrUpdateCard(data) {
 
 		if (existingCard) {
 			// 2a. ATUALIZAR card existente
-			console.log("[Pipefy Service] E-mail já existe, atualizando card...");
+			console.log("[Pipefy Service] 🔄 E-mail já existe, atualizando card...");
 
 			// Se estiver em modo mock
 			if (!PIPEFY_API_TOKEN || !PIPE_ID) {
@@ -324,29 +387,77 @@ export async function createOrUpdateCard(data) {
 				throw new Error("Não foi possível carregar os campos do pipe");
 			}
 
-			const updateMutation = `
-        mutation UpdateCard($cardId: ID!, $fields: [UpdateCardFieldInput!]!) {
-          updateCard(input: { id: $cardId, fields_attributes: $fields }) {
-            card {
-              id
-              title
-              updated_at
-            }
-          }
-        }
-      `;
-
 			const fieldsToUpdate = prepareFields(data, fieldMapping, true);
 
-			const result = await pipefyGraphQLRequest(updateMutation, {
-				cardId: existingCard.id,
-				fields: fieldsToUpdate,
-			});
+			if (fieldsToUpdate.length === 0) {
+				console.warn("[Pipefy Service] ⚠️ Nenhum campo para atualizar");
+				return {
+					success: true,
+					action: "no_changes",
+					card_id: existingCard.id,
+					message: "Nenhuma atualização necessária",
+				};
+			}
+
+			console.log("[Pipefy Service] Atualizando card ID:", existingCard.id);
+			console.log("[Pipefy Service] Campos a atualizar:", fieldsToUpdate);
+
+			// ====== MUDANÇA 1: UndefinedInput ao invés de String ======
+			const updateMutation = `
+				mutation UpdateCardField($cardId: ID!, $fieldId: ID!, $newValue: [UndefinedInput]) {
+					updateCardField(input: { 
+					card_id: $cardId, 
+					field_id: $fieldId, 
+					new_value: $newValue 
+					}) {
+					card {
+						id
+						title
+						updated_at
+					}
+					}
+				}
+				`;
+
+			let lastResult = null;
+
+			// Atualizar cada campo separadamente
+			for (const field of fieldsToUpdate) {
+				// ====== MUDANÇA 2: Mostrar também o tipo ======
+				console.log(
+					`[Pipefy Service] Atualizando campo ${field.field_id} (tipo: ${field.field_type})...`
+				);
+				try {
+					// ====== MUDANÇA 3: Usar formatFieldValue ao invés de String() ======
+					const formattedValue = formatFieldValue(
+						field.field_value,
+						field.field_type
+					);
+
+					lastResult = await pipefyGraphQLRequest(updateMutation, {
+						cardId: existingCard.id,
+						fieldId: field.field_id,
+						newValue: formattedValue, // Valor formatado
+					});
+
+					// ====== MUDANÇA 4: Log de sucesso ======
+					console.log(`[Pipefy Service] ✓ Campo ${field.field_id} atualizado`);
+				} catch (error) {
+					// ====== MUDANÇA 5: Melhor log de erro ======
+					console.error(
+						`[Pipefy Service] ✗ Erro ao atualizar campo ${field.field_id}:`,
+						error.message
+					);
+					// Continua atualizando os outros campos
+				}
+			}
+
+			console.log("[Pipefy Service] ✅ Card atualizado com sucesso");
 
 			return {
 				success: true,
 				action: "updated",
-				card_id: result.updateCard.card.id,
+				card_id: existingCard.id,
 				message: "Lead atualizado com sucesso",
 				data: {
 					nome,
@@ -354,12 +465,14 @@ export async function createOrUpdateCard(data) {
 					empresa,
 					necessidade,
 					interesse_confirmado,
-					updated_at: result.updateCard.card.updated_at,
+					updated_at:
+						lastResult?.updateCardField?.card?.updated_at ||
+						new Date().toISOString(),
 				},
 			};
 		} else {
 			// 2b. CRIAR novo card
-			console.log("[Pipefy Service] Criando novo card...");
+			console.log("[Pipefy Service] ➕ Criando novo card...");
 
 			// Se estiver em modo mock
 			if (!PIPEFY_API_TOKEN || !PIPE_ID) {
@@ -385,7 +498,7 @@ export async function createOrUpdateCard(data) {
 			}
 
 			const createMutation = `
-        mutation CreateCard($pipeId: ID!, $fields: [CardFieldInput!]!) {
+        mutation CreateCard($pipeId: ID!, $fields: [FieldValueInput!]!) {
           createCard(input: { pipe_id: $pipeId, fields_attributes: $fields }) {
             card {
               id
@@ -398,10 +511,24 @@ export async function createOrUpdateCard(data) {
 
 			const fieldsToCreate = prepareFields(data, fieldMapping, false);
 
+			if (fieldsToCreate.length === 0) {
+				throw new Error("Nenhum campo válido para criar o card");
+			}
+
+			// Remover _field_type antes de enviar para API
+			const fieldsForAPI = fieldsToCreate.map(({ field_id, field_value }) => ({
+				field_id,
+				field_value,
+			}));
+
+			console.log("[Pipefy Service] Campos a criar:", fieldsForAPI);
+
 			const result = await pipefyGraphQLRequest(createMutation, {
 				pipeId: PIPE_ID,
-				fields: fieldsToCreate,
+				fields: fieldsForAPI, // ✅ Envia apenas field_id e field_value
 			});
+
+			console.log("[Pipefy Service] ✅ Card criado com sucesso");
 
 			return {
 				success: true,
@@ -419,11 +546,12 @@ export async function createOrUpdateCard(data) {
 			};
 		}
 	} catch (error) {
-		console.error("[Pipefy Service] Erro ao processar card:", error);
+		console.error("[Pipefy Service] ❌ Erro ao processar card:", error);
 		return {
 			success: false,
 			error: true,
 			message: `Erro ao processar lead: ${error.message}`,
+			details: error.stack,
 		};
 	}
 }
@@ -440,7 +568,7 @@ export async function updateCardWithMeeting(
 	meetingLink,
 	meetingDatetime
 ) {
-	console.log("[Pipefy Service] Atualizando card com reunião:", {
+	console.log("[Pipefy Service] 📅 Atualizando card com reunião:", {
 		cardId,
 		meetingLink,
 		meetingDatetime,
@@ -466,39 +594,46 @@ export async function updateCardWithMeeting(
 			throw new Error("Não foi possível carregar os campos do pipe");
 		}
 
+		// CORRIGIDO: Usar updateCardField para cada campo
 		const updateMutation = `
-      mutation UpdateCardWithMeeting($cardId: ID!, $fields: [UpdateCardFieldInput!]!) {
-        updateCard(input: { id: $cardId, fields_attributes: $fields }) {
-          card {
-            id
-            title
-            updated_at
-          }
-        }
-      }
-    `;
+			mutation UpdateCardField($cardId: ID!, $fieldId: ID!, $newValue: [UndefinedInput]) {
+				updateCardField(input: { 
+				card_id: $cardId, 
+				field_id: $fieldId, 
+				new_value: $newValue 
+				}) {
+				card {
+					id
+					title
+					updated_at
+				}
+				}
+			}
+			`;
 
 		const fieldsToUpdate = [];
 
 		// Link da reunião
-		if (fieldMapping.link_reuniao) {
+		if (fieldMapping.link_reuniao && meetingLink) {
 			fieldsToUpdate.push({
-				field_id: fieldMapping.link_reuniao,
+				field_id: fieldMapping.link_reuniao.id,
+				field_type: fieldMapping.link_reuniao.type,
 				field_value: meetingLink,
 			});
 		}
 
 		// Data da reunião
-		if (fieldMapping.data_reuniao) {
+		if (fieldMapping.data_reuniao && meetingDatetime) {
 			fieldsToUpdate.push({
-				field_id: fieldMapping.data_reuniao,
+				field_id: fieldMapping.data_reuniao.id,
+				field_type: fieldMapping.data_reuniao.type,
 				field_value: meetingDatetime,
 			});
 		}
 
 		if (fieldsToUpdate.length === 0) {
 			console.warn(
-				"[Pipefy Service] Nenhum campo de reunião encontrado no pipe"
+				"[Pipefy Service] ⚠️ Nenhum campo de reunião encontrado no pipe"
 			);
 			return {
 				success: true,
@@ -509,21 +644,49 @@ export async function updateCardWithMeeting(
 			};
 		}
 
-		const result = await pipefyGraphQLRequest(updateMutation, {
-			cardId,
-			fields: fieldsToUpdate,
-		});
+		// Atualizar cada campo separadamente
+		let lastResult = null;
+		for (const field of fieldsToUpdate) {
+			console.log(
+				`[Pipefy Service] Atualizando campo ${field.field_id} (tipo: ${field.field_type})...`
+			);
+
+			try {
+				const formattedValue = formatFieldValue(
+					field.field_value,
+					field.field_type
+				);
+
+				lastResult = await pipefyGraphQLRequest(updateMutation, {
+					cardId,
+					fieldId: field.field_id,
+					newValue: formattedValue,
+				});
+
+				console.log(`[Pipefy Service] ✓ Campo ${field.field_id} atualizado`);
+			} catch (error) {
+				console.error(
+					`[Pipefy Service] ✗ Erro ao atualizar campo ${field.field_id}:`,
+					error.message
+				);
+				// Continua atualizando os outros campos
+			}
+		}
+
+		console.log("[Pipefy Service] ✅ Card atualizado com reunião");
 
 		return {
 			success: true,
-			card_id: result.updateCard.card.id,
+			card_id: lastResult?.updateCardField?.card?.id || cardId,
 			message: "Card atualizado com informações da reunião",
 			meeting_link: meetingLink,
 			meeting_datetime: meetingDatetime,
-			updated_at: result.updateCard.card.updated_at,
+			updated_at:
+				lastResult?.updateCardField?.card?.updated_at ||
+				new Date().toISOString(),
 		};
 	} catch (error) {
-		console.error("[Pipefy Service] Erro ao atualizar card:", error);
+		console.error("[Pipefy Service] ❌ Erro ao atualizar card:", error);
 		return {
 			success: false,
 			error: true,

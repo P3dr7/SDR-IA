@@ -8,6 +8,8 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
+  "discover:calendly": "node script/discover-calendly.js",
+  "oauth:google": "node script/oauth-setup.js",
     "discover:pipefy": "node script/discover-pipefy-fields.js"
   },
   "keywords": [
@@ -23,6 +25,8 @@
     "@fastify/cors": "^10.0.1",
     "@google/generative-ai": "^0.21.0",
     "fastify": "^5.1.0",
+    "googleapis": "^165.0.0",
+    "open": "^10.2.0",
     "uuid": "^11.0.3"
   },
   "devDependencies": {
