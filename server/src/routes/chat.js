@@ -14,7 +14,8 @@ export default async function chatRoutes(fastify, options) {
 	fastify.post("/chat", async (request, reply) => {
 		try {
 			const { message, conversation_id } = request.body;
-
+			console.log("Recebido /chat:", { conversation_id, message });
+			
 			if (!message) {
 				return reply.code(400).send({
 					error: "Mensagem é obrigatória",
