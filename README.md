@@ -311,7 +311,7 @@ server/
 **Causa:** `GEMINI_API_KEY` inválida ou ausente  
 **Solução:** Verifique chave em https://aistudio.google.com/apikey
 
-## 🛣 Roadmap
+## 🛣 Proximos Passos
 
 - [ ] Persistência de conversas (Redis/Postgres)
 - [ ] Autenticação (JWT)
@@ -343,14 +343,5 @@ Contribuições são bem-vindas! Para contribuir:
 
 ISC
 
-## 🙋 Suporte
-
-Para dúvidas ou problemas:
-
-- Abra uma [issue](https://github.com/P3dr7/SDR-IA/issues)
-- Consulte a documentação dos serviços específicos
-- Revise os logs no console (frontend) ou terminal (backend)
 
 ---
-
-Desenvolvido com ❤️ usando React, Fastify e Google Gemini
