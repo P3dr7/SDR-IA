@@ -23,7 +23,10 @@ console.log("CORS_ORIGIN:", process.env.CORS_ORIGIN);
 
 // Configurar CORS
 await fastify.register(cors, {
-	origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(",") : true,
+	origin: true, // Permite TODAS as origens
+	credentials: true,
+	methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+	allowedHeaders: ["*"]
 });
 
 // Registrar rotas
